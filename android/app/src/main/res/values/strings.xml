@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MSU Water System</string>
+    <string name="title_activity_main">MSU Water System</string>
+    <string name="package_name">com.watersystem.msu</string>
+    <string name="custom_url_scheme">com.watersystem.msu</string>
+</resources>
