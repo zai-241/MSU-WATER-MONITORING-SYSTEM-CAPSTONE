@@ -1,20 +1,20 @@
 # MSU Water Monitoring System - General Overview
 
-Welcome to the comprehensive developer and operator documentation for the **Mindanao State University (MSU) Water Monitoring & Control System**. This system provides a unified IoT-enabled platform for real-time water level and pH telemetry monitoring, automatic pump control, remote calibration, and administrative logging.
+Welcome to the comprehensive developer and operator documentation for the **Mindanao State University (MSU) Water Monitoring & Control System**. This platform provides an end-to-end IoT solution for real-time reservoir water level and pH telemetry monitoring, automatic pump protection, remote calibration, and administrative logging.
 
 ---
 
 ## 1. System Architecture & Components
 
-The platform consists of three main systems operating in unison:
+The platform consists of three core operational layers:
 
 ```mermaid
 graph TD
-    subgraph Edge Layer (Microcontroller)
-        ESP32[ESP32 MCU Node]
-        LevelSensor[Hydrostatic Level Sensor] -->|Analog Voltage| ESP32
-        pHSensor[pH Sensor Module] -->|Analog Voltage| ESP32
-        Relay[Relay Switch] <-->|Pump Command| ESP32
+    subgraph Edge Layer (ESP32 Microcontroller)
+        ESP32[ESP32 Dev Module Dual-Core 240MHz]
+        LevelSensor[Hydrostatic Level Sensor] -->|Analog DC GPIO 35| ESP32
+        pHSensor[pH Glass Electrode Module] -->|Analog DC GPIO 34| ESP32
+        Relay[5V Optocoupled Relay] <-->|Pump Control GPIO 32| ESP32
     end
 
     subgraph Cloud Layer (Firebase Backend)
@@ -23,135 +23,169 @@ graph TD
     end
 
     subgraph Client Layer (Cross-Platform Frontend)
-        WebApp[React Vite SPA]
-        MobileApp[Capacitor Native App]
+        WebApp[React 18 + Vite SPA]
+        MobileApp[Capacitor Native Android App]
     end
 
-    ESP32 <-->|Secure HTTP & WebSockets| RTDB
-    RTDB <-->|onValue Live Subscriptions| WebApp
-    RTDB <-->|onValue Live Subscriptions| MobileApp
-    Firestore <-->|User Profile & Auth Data| WebApp
-    Firestore <-->|User Profile & Auth Data| MobileApp
+    ESP32 <-->|HTTPS REST API & Token Auth| RTDB
+    RTDB <-->|Live onValue Subscriptions| WebApp
+    RTDB <-->|Live onValue Subscriptions| MobileApp
+    Firestore <-->|User Profiles & Auth Permissions| WebApp
+    Firestore <-->|User Profiles & Auth Permissions| MobileApp
 ```
 
 ### 1.1 Edge Hardware Node (ESP32)
-The physical core of the monitoring system is powered by an ESP32 microcontroller, deployed at the physical reservoir site. It is equipped with:
-*   **Hydrostatic Water Level Sensor**: Measures pressure-induced voltage to calculate water volume.
-*   **pH Glass Electrode Sensor**: Measures hydrogen-ion concentration to monitor acidity.
-*   **Relay Controller**: Drives the 220V physical water pump actuator.
-*   **Network Hardware**: Connects via on-board Ethernet (primary) or Wi-Fi (backup/failover).
+The physical edge node deployed at the reservoir site is powered by an **ESP32 Dev Module** running FreeRTOS dual-core multitasking:
+* **Hydrostatic Water Level Sensor**: Submersible pressure sensor providing continuous DC voltage on **GPIO 35** (ESP32 ADC1_CH7, 12-bit resolution) mapped to water column height (0–5m).
+* **pH Glass Electrode Sensor**: Industrial electrode with signal conditioner on **GPIO 34** (ESP32 ADC1_CH6, 12-bit resolution) measuring hydrogen-ion concentration (0–14 pH).
+* **Pump Actuator Relay**: 5V optocoupled single-channel relay on **GPIO 32** driving the 220V AC pump (`HIGH` = Pump ON, `LOW` = Pump OFF). Protected by a 30-second anti-chatter minimum OFF cooldown. *(Note: No servo motor or mechanical valve is used).*
+* **Dual Network Connectivity**: Hardware LAN8720 Ethernet PHY (MDC: GPIO 23, MDIO: GPIO 18) as primary wired link; 2.4GHz Wi-Fi as automatic backup with a 90-second zombie-socket watchdog.
+* **Hardware Controller Note**: The deployed edge node is exclusively the ESP32 Dev Module. *(Orange Pi One: Not implemented / TO CONFIRM as an unadopted alternative).*
 
-### 1.2 Database & Backend (Firebase)
-*   **Firebase Realtime Database (RTDB)**: Serves as the primary message bus. Sub-second read/write events synchronize the physical ESP32 state with the React and mobile client interfaces.
-*   **Cloud Firestore**: Handles slower, structured data such as role-based user accounts, operator credentials, and job designations.
-*   **Firebase Hosting**: Hosts the compiled single-page React app at [https://msu-water-monitoring-system.web.app](https://msu-water-monitoring-system.web.app).
+### 1.2 Cloud Layer (Firebase)
+* **Firebase Realtime Database (RTDB)**: Serves as the primary telemetry bus. Telemetry (`/tanks/1`), system thresholds (`/config`), alarm notifications (`/notifications`), audit events (`/logs`), and 10-minute historical telemetry samples (`/history/tanks/1`) synchronize with sub-second latency.
+* **Cloud Firestore**: Stores role-based operator profiles (`/users/{uid}`) with fields `id`, `username`, `email`, `role` (`admin | worker | viewer`), `jobTitle`, `status`, and `createdAt`.
+* **Firebase Hosting**: Hosts the compiled React single-page production bundle.
 
-### 1.3 Client Dashboard Application
-*   **React (Vite + TypeScript)**: A modern web application providing real-time SVG charts, status gauges, calibration inputs, administrative panels, and logs.
-*   **Capacitor (Android Wrapper)**: Wraps the React web bundle to compile a native Android application. It utilizes the same codebase and communicates directly with Firebase, ensuring instant updates across all clients.
+### 1.3 Cross-Platform Client Dashboard
+* **Web SPA (`frontend/`)**: React 18, TypeScript, Vite, Tailwind CSS, Radix UI, and Recharts. Includes real-time gauges, admin calibration tools, audit logs, and data exports.
+* **Mobile Wrapper (`mobile/`)**: Capacitor 8 native Android wrapper compiling the same responsive web application to an APK.
+* **Multi-Format Reports**: Full data export in **Excel (.xlsx)** via `exceljs`, **PDF (.pdf)** via `jspdf` & `jspdf-autotable`, and **CSV (.csv)**.
 
 ---
 
 ## 2. Directory Structure
 
-Below is the directory map of the MSU Water Monitoring System project:
+The repository is organized into clean, modular layers:
 
 ```text
 MSU-WATER-MONITORING-SYSTEM/
-├── android/                   # Capacitor-generated Android native project files
-├── Documentation/             # System documentation, SRS, and Methodology files
-│   ├── Methodology.md         # Algorithms, calibration formulas, and design system
-│   ├── SRS.md                 # Software Requirements Specification
-│   └── System_Overview.md     # Setup, project architecture, and operators manual
-├── esp32_firmware/            # Microcontroller source code
-│   └── esp32_firmware.ino     # Main C++ firmware loop, sensors filtering & RTDB client
-├── public/                    # Static assets (logos, icons)
-├── src/                       # Frontend source folder
-│   ├── components/            # Reusable UI components (AppLayout, ProtectedRoute)
-│   ├── config/                # Firebase initialization and SDK configs
-│   ├── context/               # Auth and UI context hooks
-│   ├── hooks/                 # custom React state hooks
-│   ├── lib/                   # Utility libraries (Shadcn configurations)
-│   ├── pages/                 # Full view layouts (Dashboard, AdminPanel, Reports, Logs)
-│   ├── routes/                # Application page routing
-│   ├── services/              # Authentication and business logic services
-│   ├── store/                 # Zustand-like custom hooks for Firebase listeners
-│   └── test/                  # Automated verification and Vitest files
-├── capacitor.config.ts        # Capacitor cross-platform build configuration
-├── tailwind.config.ts         # Style tokens, colors, transitions and spacing
-├── vite.config.ts             # Vite server bindings, aliases and compilation environment
-└── package.json               # Frontend dependencies and npm scripts configuration
+├── frontend/                   # React SPA web application (Vite + TypeScript)
+│   ├── public/                 # Static assets (favicons, logos)
+│   ├── src/                    # Application source code
+│   │   ├── components/         # Reusable UI components (WaterGauge, AppLayout, etc.)
+│   │   ├── config/             # Firebase SDK client initialization
+│   │   ├── context/            # AuthContext and state providers
+│   │   ├── hooks/              # Custom React hooks (useAuth, useUIStabilization)
+│   │   ├── lib/                # Utility helpers (utils.ts)
+│   │   ├── pages/              # Views (Dashboard, AdminPanel, Reports, Logs, Login)
+│   │   ├── routes/             # App routing configuration
+│   │   ├── services/           # Authentication and business logic services
+│   │   ├── store/              # Centralized state store (useStore.ts)
+│   │   └── test/               # Vitest unit & integration test suites
+│   ├── index.html              # HTML entrypoint
+│   ├── vite.config.ts          # Vite bundler configuration
+│   ├── vitest.config.ts        # Vitest test runner configuration
+│   ├── tailwind.config.ts      # Tailwind design system styling
+│   └── package.json            # Frontend package scripts
+├── backend/                    # Microcontroller firmware and cloud security rules
+│   ├── cloud/                  # Firebase security configuration
+│   │   ├── database.rules.json # Realtime Database security rules
+│   │   └── firestore.rules     # Cloud Firestore security rules
+│   └── firmware/               # ESP32 edge microcontroller source code
+│       ├── esp32_firmware.ino  # FreeRTOS dual-core C++ Arduino firmware
+│       ├── secrets.h           # Device Wi-Fi and Firebase credentials (untracked)
+│       └── secrets.example.h   # Credentials template
+├── mobile/                     # Cross-platform mobile project
+│   ├── android/                # Capacitor Android native project files
+│   └── capacitor.config.ts     # Capacitor build configuration
+├── docs/                       # Project specifications & architecture documentation
+│   ├── Methodology.md          # 4-stage filtering, calibration math, and database schemas
+│   ├── SRS.md                  # Software Requirements Specification
+│   └── System_Overview.md      # Setup guide, architecture, and operator manual
+├── firebase.json               # Root Firebase deployment configuration
+├── package.json                # Root package runner (dev, build, test, cap:sync)
+└── README.md                   # Project overview and quick-start guide
 ```
 
 ---
 
 ## 3. Setup & Development Guide
 
-### 3.1 Prerequisite Installations
-Ensure the following tools are installed on your workstation:
-*   [Node.js](https://nodejs.org/) (v18.0.0 or higher)
-*   [Arduino IDE](https://www.arduino.cc/en/software) (for ESP32 programming)
-*   [Android Studio](https://developer.android.com/studio) (for compiling Capacitor to APK)
+### 3.1 Prerequisites
+* [Node.js](https://nodejs.org/) (v18.0.0 or higher) & `npm`
+* [Arduino IDE](https://www.arduino.cc/en/software) (2.x recommended) with ESP32 Board Support
+* [Android Studio](https://developer.android.com/studio) (optional, for compiling Capacitor Android APK)
+* Firebase Project with Realtime Database, Cloud Firestore, and Authentication enabled
 
 ### 3.2 Setting Up the Web Application
-1.  Navigate to the repository root directory in your terminal:
-    ```bash
-    cd c:\Zailanor\Projects\MSU-WATER-MONITORING-SYSTEM
-    ```
-2.  Install all required npm dependencies:
-    ```bash
-    npm install
-    ```
-3.  Launch the local development server:
-    ```bash
-    npm run dev
-    ```
-    The web console will bind to `http://localhost:8080` (or your local IP address `http://192.168.x.x:8080`).
+1. Navigate to the repository root:
+   ```bash
+   cd MSU-WATER-MONITORING-SYSTEM
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Configure Firebase credentials in `frontend/src/config/firebase.ts`.
+4. Launch the local development server:
+   ```bash
+   npm run dev
+   ```
+   The application binds to `http://localhost:8080`.
+5. Run automated unit tests:
+   ```bash
+   npm test
+   ```
+   *(Executes 37 tests across 5 test suites covering offline controllers, calibration, and stabilization).*
+6. Build production bundle:
+   ```bash
+   npm run build
+   ```
+   Outputs the static bundle to `frontend/dist/`.
+7. Deploy to Firebase Hosting:
+   ```bash
+   firebase deploy
+   ```
 
 ### 3.3 Flashing the ESP32 Node
-1.  Open [esp32_firmware.ino](file:///c:/Zailanor/Projects/MSU-WATER-MONITORING-SYSTEM/esp32_firmware/esp32_firmware.ino) in the Arduino IDE.
-2.  Install the required ESP32 hardware boards and library dependencies:
-    *   **ESP32 Board Pack** (v2.x or v3.x)
-    *   **Firebase Arduino Client** (by Mobizt)
-    *   **ArduinoJson** (by Benoit Blanchon)
-    *   **ESP32Servo** library
-3.  Configure your network credentials in the source file:
-    ```cpp
-    #define WIFI_SSID "Your_WiFi_SSID"
-    #define WIFI_PASSWORD "Your_WiFi_Password"
-    ```
-4.  Plug in the ESP32 board via USB, choose the correct COM port, select `ESP32 Dev Module` as your target board, and click **Upload**.
+1. Open `backend/firmware/esp32_firmware.ino` in the Arduino IDE.
+2. In the Arduino Boards Manager, ensure **esp32 by Espressif Systems** (v2.x or v3.x) is installed.
+3. **Firmware Dependencies**: The firmware uses native ESP32 core libraries (`WiFi`, `WiFiClientSecure`, `HTTPClient`, `ETH`, `esp_task_wdt`, `FreeRTOS`). **No third-party libraries** (such as Mobizt Firebase, ArduinoJson, or ESP32Servo) are required, preserving heap for TLS operations.
+4. Copy `backend/firmware/secrets.example.h` to `backend/firmware/secrets.h` and configure your credentials:
+   ```cpp
+   #define WIFI_SSID "Your_WiFi_SSID"
+   #define WIFI_PASSWORD "Your_WiFi_Password"
+   #define FIREBASE_API_KEY "Your_Firebase_API_Key"
+   #define FIREBASE_AUTH_EMAIL "esp32-device@your-domain.edu"
+   #define FIREBASE_AUTH_PASSWORD "Your_Password"
+   ```
+5. Select **ESP32 Dev Module** as the target board, select the COM port, and click **Upload**.
 
 ### 3.4 Building the Mobile App (Capacitor Android)
-1.  Generate the production web build:
-    ```bash
-    npm run build
-    ```
-2.  Sync the web code to the native Android platform:
-    ```bash
-    npx cap sync
-    ```
-3.  Open the project in Android Studio:
-    ```bash
-    npx cap open android
-    ```
-4.  Build the debug/release APK directly from Android Studio or deploy to a connected physical device.
+1. Build the production web bundle:
+   ```bash
+   npm run build
+   ```
+2. Sync web assets to the native Android project:
+   ```bash
+   npm run cap:sync
+   ```
+3. Open the native Android project in Android Studio:
+   ```bash
+   npm run cap:open
+   ```
+4. Build the debug or release APK directly from Android Studio.
 
 ---
 
 ## 4. System Operations Guide
 
-### 4.1 How Calibration Works
-Water level and pH sensors suffer from physical drift and variations in supply voltage. The system admin can calibrate them remotely via the **Admin Panel**:
-1.  **Water Level Calibration**:
-    *   **Vmin (Empty Voltage)**: Set this to the voltage reading of the hydrostatic sensor when the tank is completely empty (typically around `0.25V` to `0.5V`).
-    *   **Vmax (Full Voltage)**: Set this to the voltage reading when the tank is full (typically `2.5V` to `3.0V`).
-    *   **Height**: Set the physical height of the reservoir in meters.
-2.  **pH Calibration**:
-    *   **Neutral Reference Voltage**: The voltage output when the probe is in pH 7.0 buffer solution (typically `2.50V`).
-    *   **Slope Sensitivity**: Voltage change per unit pH. Defaults to `0.18V/pH`.
-    *   **Reading Offset**: Additional pH offset to align with hand-held digital meters.
+### 4.1 Sensor Calibration
+Sensor calibration parameters can be adjusted in real time via the **Admin Panel** (`tanks/1`):
+1. **Water Level Calibration**:
+   - **$V_{min}$ (Empty Voltage)**: Sensor voltage when the tank is empty (default `0.25 V`).
+   - **$V_{max}$ (Full Voltage)**: Sensor voltage when the tank is full (default `3.00 V`).
+   - **Tank Height**: Physical height of the reservoir in meters (default `5.00 m`).
+   - **Level Offset**: Fine calibration adjustment in percentage (default `0.00 %`).
+2. **pH Sensor Calibration**:
+   - **Neutral Voltage ($V_{neutral}$)**: Voltage reading when probe is immersed in pH 7.0 buffer solution (default `2.50 V`).
+   - **Slope Sensitivity**: Voltage difference per pH unit (default `0.18 V/pH`).
+   - **pH Offset**: Fine reading offset to calibrate against reference hand-held meters (default `0.00`).
 
-### 4.2 System Modes
-*   **Maintenance Mode**: Activating Maintenance Mode via the Admin Panel disables all pump controls and suppresses notifications system-wide. This allows physical repairs without triggering automatic pump overrides or false alarms.
-*   **Pump Control Lock**: Locks all manual toggles for standard "Worker" operators, restricting pump activation rights strictly to Admins.
+### 4.2 System Modes & Safeguards
+* **Automatic Pump Refill**: When water level drops $\le 15\%$ (`lowLevelThreshold`), the pump is started automatically. A 30-second anti-chatter cooldown prevents immediate restarts.
+* **Overflow Protection**: When water level reaches $\ge 95\%$ (`overflowThreshold`), the pump is immediately stopped.
+* **Maintenance Mode**: Activating Maintenance Mode via the Admin Panel forces the physical pump relay OFF, suppresses alarms, and prevents automatic or manual pump activation during physical maintenance.
+* **Pump Control Lock**: Restricts pump manual toggles exclusively to Administrators, preventing standard Workers from activating relays.
+* **Multi-Tank Infrastructure**: Tank 1 is the active IoT-connected reservoir. Tanks 2–4 are pre-configured expansion slots labeled **"Planned - IoT node not yet installed"** in the dashboard.
