@@ -1,7 +1,7 @@
 {
   "hosting": {
     "site": "msu-water-monitoring-system",
-    "public": "dist",
+    "public": "frontend/dist",
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -13,5 +13,11 @@
         "destination": "/index.html"
       }
     ]
+  },
+  "database": {
+    "rules": "backend/cloud/database.rules.json"
+  },
+  "firestore": {
+    "rules": "backend/cloud/firestore.rules"
   }
 }

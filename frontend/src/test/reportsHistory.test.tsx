@@ -70,7 +70,13 @@ describe('Historical Data & Reports Telemetry', () => {
   });
 
   it('1. database.rules.json contains auth-protected history node with timestamp index under tanks/1', () => {
-    const rulesPath = path.resolve(process.cwd(), 'database.rules.json');
+    const possiblePaths = [
+      path.resolve(process.cwd(), 'backend/cloud/database.rules.json'),
+      path.resolve(process.cwd(), '../backend/cloud/database.rules.json'),
+      path.resolve(__dirname, '../../../backend/cloud/database.rules.json'),
+      path.resolve(process.cwd(), 'database.rules.json'),
+    ];
+    const rulesPath = possiblePaths.find(p => fs.existsSync(p)) || possiblePaths[0];
     const rulesJson = JSON.parse(fs.readFileSync(rulesPath, 'utf8'));
 
     expect(rulesJson.rules.history).toBeDefined();

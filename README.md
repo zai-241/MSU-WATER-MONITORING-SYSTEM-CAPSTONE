@@ -55,7 +55,6 @@ The MSU Water Monitoring & Control System is a full-stack IoT platform for autom
 │  Hydrostatic Sensor ──┐                      │
 │  pH Electrode     ────┼──► ESP32 MCU ──────► Firebase RTDB
 │  Relay (Pump)     ◄───┘        │             │
-│  Servo (Valve)    ◄────────────┘             │
 └──────────────────────────────────────────────┘
                                 │
                ┌────────────────┴────────────────┐
@@ -87,7 +86,6 @@ The ESP32 connects to Firebase via **Ethernet (LAN8720, primary)** or **Wi-Fi 2.
 - Automatic relay activation on low water level (critical threshold)
 - Automatic relay shutoff on high water level (overflow warning)
 - Manual pump toggle from dashboard (role-restricted)
-- Servo valve with timed 10-second activation triggered remotely
 
 **Alert System**
 - Validated alert state machine: `NORMAL → CRITICAL/WARNING → RECOVERED`
@@ -100,15 +98,14 @@ The ESP32 connects to Firebase via **Ethernet (LAN8720, primary)** or **Wi-Fi 2.
 - Changes sync instantly to the ESP32 over Firebase — no reflashing required
 
 **User Management**
-- Role-based access control: Super-Admin, Administrator, Worker, Viewer
+- Role-based access control: Administrator, Worker, Viewer
 - Admin panel for registering, editing, enabling/disabling operators
 - Firebase Auth + Firestore for credential management
 
 **Reports & Logs**
 - Event log viewer with level-tagged entries (INFO / WARNING / ERROR / CRITICAL)
-- Pump activation history chart (last 7 / 30 days)
-- Alert distribution breakdown by category
-- CSV export of telemetry logs
+- Historical telemetry charts (Area, Line, Bar, Pie)
+- Multi-format data export: Excel (.xlsx), PDF (.pdf), and CSV (.csv)
 
 **Cross-Platform**
 - Web app deployable to Firebase Hosting
@@ -120,7 +117,7 @@ The ESP32 connects to Firebase via **Ethernet (LAN8720, primary)** or **Wi-Fi 2.
 
 | Layer | Technology |
 |---|---|
-| Microcontroller | ESP32 (Arduino C++) |
+| Microcontroller | ESP32 (Arduino C++, FreeRTOS dual-core) |
 | Connectivity | LAN8720 Ethernet + Wi-Fi (dual failover) |
 | Cloud Database | Firebase Realtime Database |
 | Auth & Users | Firebase Authentication + Cloud Firestore |
@@ -136,12 +133,11 @@ The ESP32 connects to Firebase via **Ethernet (LAN8720, primary)** or **Wi-Fi 2.
 
 | Component | Purpose |
 |---|---|
-| ESP32 Dev Module | Main microcontroller |
+| ESP32 Dev Module | Main microcontroller (Dual-Core 240MHz) |
 | LAN8720 Ethernet PHY | Primary wired network (MDC: GPIO23, MDIO: GPIO18) |
 | Hydrostatic Water Level Sensor | Pressure-voltage water level measurement (GPIO35) |
 | pH Glass Electrode Module | Hydrogen-ion concentration measurement (GPIO34) |
 | Relay Module (5V) | 220V pump actuator control (GPIO32) |
-| Servo Motor | Valve actuation, 10-second timed open (GPIO33) |
 
 ---
 
@@ -149,27 +145,31 @@ The ESP32 connects to Firebase via **Ethernet (LAN8720, primary)** or **Wi-Fi 2.
 
 ```
 MSU-WATER-MONITORING-SYSTEM/
-├── android/                    # Capacitor-generated Android native project
-├── Documentation/
+├── frontend/                   # React SPA web application (Vite + TypeScript)
+│   ├── public/                 # Static assets (logos, favicon)
+│   ├── src/                    # Source components, pages, context, and store
+│   ├── vite.config.ts          # Bundler configuration
+│   ├── vitest.config.ts        # Test runner configuration
+│   ├── tailwind.config.ts      # Tailwind design system styling
+│   └── package.json            # Frontend-specific scripts
+├── backend/                    # Cloud rules and microcontroller edge firmware
+│   ├── cloud/                  # Firebase RTDB & Firestore security rules
+│   │   ├── database.rules.json # Realtime Database security rules
+│   │   └── firestore.rules     # Firestore security rules
+│   └── firmware/               # Microcontroller firmware
+│       ├── esp32_firmware.ino  # FreeRTOS dual-core C++ Arduino firmware
+│       ├── secrets.h           # Device Wi-Fi and Firebase REST API keys
+│       └── secrets.example.h   # Credentials template
+├── mobile/                     # Cross-platform mobile project
+│   ├── android/                # Capacitor-generated Android native project
+│   └── capacitor.config.ts     # Capacitor cross-platform configuration
+├── docs/                       # Project specifications & architecture documentation
 │   ├── Methodology.md          # Signal filtering algorithms and calibration formulas
 │   ├── SRS.md                  # Software Requirements Specification
 │   └── System_Overview.md      # Architecture overview and operator manual
-├── esp32_firmware/
-│   └── esp32_firmware.ino      # ESP32 C++ firmware (sensors, filtering, Firebase REST Auth)
-├── public/                     # Static assets
-├── src/
-│   ├── components/             # Reusable UI components
-│   ├── config/                 # Firebase SDK initialization
-│   ├── context/                # Auth context
-│   ├── hooks/                  # Custom React hooks
-│   ├── pages/                  # Dashboard, AdminPanel, Logs, Reports
-│   ├── routes/                 # Protected route wrappers
-│   ├── services/               # Auth and user management services
-│   └── store/                  # Firebase real-time state store (useStore.ts)
-├── capacitor.config.ts
-├── tailwind.config.ts
-├── vite.config.ts
-└── package.json
+├── firebase.json               # Root Firebase deployment configuration
+├── package.json                # Root package runners (build, dev, test)
+└── README.md
 ```
 
 ---
@@ -196,7 +196,7 @@ MSU-WATER-MONITORING-SYSTEM/
    npm install
    ```
 
-3. Configure Firebase by editing `src/config/firebase.ts` with your own Firebase project credentials:
+3. Configure Firebase by editing `frontend/src/config/firebase.ts` with your own Firebase project credentials:
    ```ts
    export const firebaseConfig = {
      apiKey: "YOUR_API_KEY",
@@ -209,13 +209,18 @@ MSU-WATER-MONITORING-SYSTEM/
    };
    ```
 
-4. Start the development server:
+4. Start the development server from the repository root:
    ```bash
    npm run dev
    ```
    The app will be available at `http://localhost:8080`.
 
-5. To deploy to Firebase Hosting:
+5. Run automated unit tests:
+   ```bash
+   npm test
+   ```
+
+6. To deploy to Firebase Hosting:
    ```bash
    npm run build
    firebase deploy
@@ -223,12 +228,9 @@ MSU-WATER-MONITORING-SYSTEM/
 
 ### ESP32 Firmware Setup
 
-1. Open `esp32_firmware/esp32_firmware.ino` in the Arduino IDE.
+1. Open `backend/firmware/esp32_firmware.ino` in the Arduino IDE.
 
-2. Install the following libraries via the Library Manager:
-   - `ESP32Servo`
-
-3. Configure your network and Firebase Auth credentials in `esp32_firmware/secrets.h` (see `secrets.example.h`):
+2. Configure your network and Firebase Auth credentials in `backend/firmware/secrets.h` (see `secrets.example.h`):
    ```cpp
    #define WIFI_SSID "Your_WiFi_SSID"
    #define WIFI_PASSWORD "Your_WiFi_Password"
@@ -237,13 +239,7 @@ MSU-WATER-MONITORING-SYSTEM/
    #define FIREBASE_AUTH_PASSWORD "Your_Password"
    ```
 
-4. Update the Firebase URLs to point to your own project:
-   ```cpp
-   const char *firebaseURL     = "https://YOUR_PROJECT-default-rtdb.firebasedatabase.app/tanks/1.json";
-   const char *firebaseLogsURL = "https://YOUR_PROJECT-default-rtdb.firebasedatabase.app/logs.json";
-   ```
-
-5. Select **ESP32 Dev Module** as the target board, choose the correct COM port, and click **Upload**.
+3. Select **ESP32 Dev Module** as the target board, choose the correct COM port, and click **Upload**.
 
 > **Note:** The firmware supports ESP32 Arduino Core v2.x and v3.x. The `ETH.begin()` argument order is handled automatically via a compile-time check on `ESP_IDF_VERSION`.
 
@@ -256,12 +252,12 @@ MSU-WATER-MONITORING-SYSTEM/
 
 2. Sync to the Android native project:
    ```bash
-   npx cap sync
+   npm run cap:sync
    ```
 
 3. Open in Android Studio:
    ```bash
-   npx cap open android
+   npm run cap:open
    ```
 
 4. Build and run from Android Studio onto a connected device or emulator (Android 8.0 / API 26 minimum).
@@ -306,20 +302,17 @@ All calibration parameters (`levelVmin`, `levelVmax`, `tankHeight`, `levelOffset
 
 | Role | Capabilities |
 |---|---|
-| **Super-Admin** | Full access. Manages all users, configurations, and controls. Cannot be deleted by standard admins. |
-| **Administrator** | User management, tank configuration, calibration, pump control locks. |
-| **Worker** | View live telemetry, view logs, control assigned pumps (unless pump lock is active). |
-| **Viewer** | Read-only dashboard access. No logs, no controls, no configuration. |
+| **Administrator** | Full system access: user management, threshold configuration, tank calibration, pump control locks. |
+| **Worker** | View live telemetry, view historical event logs, export reports, and control assigned pumps (unless pump lock is active). |
+| **Viewer** | Read-only dashboard access. No logs, no exports, no pump controls, no configuration. |
 
 ---
 
 ## Known Limitations
 
 - **Single-tank firmware:** The ESP32 firmware is hardcoded to `tanks/1` in Firebase. Multi-tank support exists on the frontend but requires separate firmware deployments per node.
-- **Firebase RTDB rules:** The default `database.rules.json` is open (`read/write: true`) for development. **Restrict these rules before any production deployment.**
-- **User deletion:** Deleting a user from the Admin Panel removes their Firestore profile but does not delete their Firebase Auth account. A Cloud Function or Admin SDK is required for complete account removal.
-- **Reports fallback data:** When pump activation logs are sparse, the Reports chart seeds placeholder values to maintain visual continuity. This is cosmetic only and does not affect real log data.
-- **Hardcoded credentials:** Wi-Fi SSID, password, and Firebase URLs are defined directly in the `.ino` source file. Move these to a separate config header and add it to `.gitignore` before publishing.
+- **User deletion:** Deleting an operator from the Admin Panel removes their Firestore profile and deactivates their session. In a client-only architecture, purging the Firebase Auth user completely requires a Cloud Function with the Firebase Admin SDK.
+- **Hardware prototype:** Physical installation currently connects Reservoir Tank 1; Reservoirs 2–4 are configured as planned expansion nodes.
 
 ---
 

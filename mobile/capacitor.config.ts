@@ -3,7 +3,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 const config: CapacitorConfig = {
   appId: 'com.watersystem.msu',
   appName: 'MSU Water System',
-  webDir: 'dist',
+  webDir: '../frontend/dist',
   server: {
     url: 'https://msu-water-monitoring-system.web.app',
     cleartext: true,
